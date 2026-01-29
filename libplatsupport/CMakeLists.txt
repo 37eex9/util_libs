@@ -77,6 +77,8 @@ elseif(KernelPlatformCheshire OR KernelPlatformAriane)
     set(LibPlatSupportMach "cva6")
 elseif(KernelPlatformHifiveP550)
     set(LibPlatSupportMach "eswin")
+elseif(KernelPlatformVisionfive213b)
+    set(LibPlatSupportMach "starfive-jh7110")
 elseif(NOT ${KernelArmMach} STREQUAL "")
     # falling back to kernel settings is done to keep legacy compatibility
     set(LibPlatSupportMach "${KernelArmMach}")
