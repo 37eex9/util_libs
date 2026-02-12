@@ -7,13 +7,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <platsupport/serial.h>
-#include <platsupport/plat/serial.h>
+#include <platsupport/mach/serial.h>
 #include "../../chardev.h"
 
 #define UART_THR 0x00 /* UART Transmit Holding Register */
-#define UART_IER 0x01 /* UART Interrupt Enable Register */
 #define UART_IER_ERDAI BIT(0) /* Enable Received Data Available Interrupt */
+#if defined(CONFIG_PLAT_VISIONFIVE213B)
+#define UART_IER 0x01 /* UART Interrupt Enable Register */
 #define UART_LSR 0x05 /* UART Line Status Register */
+#elif defineg(CONFIG_PLAT_STAR64)
+#define UART_IER 0x04 /* UART Interrupt Enable Register */
+#define UART_LSR 0x14 /* UART Line Status Register */
+#else
+#error "This platform is not supported by starfive-jh7110 machine."
+#endif
+
 #define UART_LSR_THRE 0x20 /* Transmit Holding Register Empty */
 
 #define REG_PTR(base, off)     ((volatile uint32_t *)((base) + (off)))

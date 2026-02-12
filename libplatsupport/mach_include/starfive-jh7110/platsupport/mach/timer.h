@@ -8,57 +8,69 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* These values correspond to the DTS node 'soc/timer@0x2000000' */
-#define JH7110_TIMER_BASE 0X2000000
-/* The device has a size of 0x10000, but we only need 0x1000 for the driver. */
-#define JH7110_TIMER_SIZE 0x1000
-
-/* TODO check defines below */
-/* see starfive Visionfive 2 SDK (6.0.0) [0] linux driver [1]
- * linux/drivers/clocksource/timer-jh7110.c
- * [0] https://github.com/starfive-tech/VisionFive2/tree/6.0.0
- * [1] https://github.com/starfive-tech/linux/blob/4cecf169f38eb94b40e307f5f870055e4d9d64f1/drivers/clocksource/timer-jh7110.c
+/*
+ * The JH7110 SoC contains a timer with four 32-bit counters. Each one of these
+ * counters is referred to as a "channel".
+ * At the time of writing the SoC documentation is quite minimal for the timer device
+ * and so most of this driver is based on the Linux patches [1]
+ *
+ * [1]: https://patchwork.kernel.org/project/linux-riscv/patch/20230627055313.252519-3-xingyu.wu@starfivetech.com/.
  */
-// #define JH7110_TIMER_IRQ 0x159
-#define JH7110_TIMER_IRQ 0x3
 
+/* Channel information */
+#define STARFIVE_TIMER_NUM_CHANNELS 4
+#define STARFIVE_TIMER_CHANNEL_REGISTERS_LEN_IN_BYTES 0x40
+#define STARFIVE_TIMER_CHANNEL_0_IRQ 69
+#define STARFIVE_TIMER_CHANNEL_1_IRQ 70
+#define STARFIVE_TIMER_CHANNEL_2_IRQ 71
+#define STARFIVE_TIMER_CHANNEL_3_IRQ 72
+
+/* This information comes from the DTS file */
+#define STARFIVE_TIMER_BASE 0x13050000
+#define STARFIVE_TIMER_REGISTER_WINDOW_LEN_IN_BYTES 0x10000
 /* This is 24MHz */
-#define JH7110_TIMER_TICKS_PER_SECOND 0x16e3600
+#define STARFIVE_TIMER_TICKS_PER_SECOND 0x16e3600
 
-#define JH7110_TIMER_MAX_TICKS UINT32_MAX
+#define STARFIVE_TIMER_MAX_TICKS UINT32_MAX
 
-#define JH7110_NUM_TIMERS 8
-
-#define JH7110_TIMER_ENABLED 0x1
-// #define JH7110_TIMER_ENABLED 0x10 /* register */
-#define JH7110_TIMER_DISABLED 0x0 /* OK */
-#define JH7110_TIMER_MODE_FREE_RUNNING 0x0 /* compare continuous JH7110_TIMER_MODE_CONTIN in linux driver */
-#define JH7110_TIMER_MODE_USER_DEFINED (1 << 1) /* compare single in linux driver */
-#define JH7110_TIMER_IRQ_UNMASK 0x0
-// #define JH7110_TIMER_IRQ_UNMASK 0x1 /* JH7110_TIMER_INT_CLR_AVA_MASK */
+/* Register value constants */
+#define STARFIVE_TIMER_MODE_CONTINUOUS 0
+#define STARFIVE_TIMER_MODE_SINGLE 1
+#define STARFIVE_TIMER_DISABLED 0
+#define STARFIVE_TIMER_ENABLED 1
+#define STARFIVE_TIMER_INTERRUPT_UNMASKED 0
+#define STARFIVE_TIMER_INTERRUPT_MASKED 1
+#define STARFIVE_TIMER_INTCLR_BUSY BIT(1)
 
 typedef struct {
-    uint32_t load_count;
-    uint32_t value;
+    /* Registers */
+    /* this register doesn't seem to do anything */
+    uint32_t status;
     uint32_t ctrl;
-    uint32_t eoi;
-    uint32_t int_status;
-} jh7110_timer_regs_t;
+    uint32_t load;
+    uint32_t unknown1;
+    uint32_t enable;
+    uint32_t reload;
+    uint32_t value;
+    uint32_t unknown2;
+    uint32_t intclr;
+    uint32_t intmask;
+} starfive_timer_regs_t;
 
 typedef struct {
-    volatile jh7110_timer_regs_t *regs;
+    volatile starfive_timer_regs_t *regs;
     /*
      * Stores the number of times the continuous counter timer has elapsed and started over.
      * This allows us to count to a higher number than allowed by the hardware.
      */
     uint32_t value_h;
-} jh7110_timer_t;
+} starfive_timer_t;
 
-void jh7110_timer_enable(jh7110_timer_t *timer);
-void jh7110_timer_disable(jh7110_timer_t *timer);
-void jh7110_timer_handle_irq(jh7110_timer_t *timer);
-uint64_t jh7110_timer_get_time(jh7110_timer_t *timer);
-void jh7110_timer_reset(jh7110_timer_t *timer);
-int jh7110_timer_set_timeout(jh7110_timer_t *timer, uint64_t ns, bool is_periodic);
-void jh7110_timer_disable_all(void *vaddr);
-void jh7110_timer_init(jh7110_timer_t *timer, void *vaddr, uint64_t channel);
+void starfive_timer_start(starfive_timer_t *timer);
+void starfive_timer_stop(starfive_timer_t *timer);
+void starfive_timer_handle_irq(starfive_timer_t *timer);
+uint64_t starfive_timer_get_time(starfive_timer_t *timer);
+void starfive_timer_reset(starfive_timer_t *timer);
+int starfive_timer_set_timeout(starfive_timer_t *timer, uint64_t ns, bool is_periodic);
+void starfive_timer_disable_all_channels(void *vaddr);
+void starfive_timer_init(starfive_timer_t *timer, void *vaddr, uint64_t channel);
