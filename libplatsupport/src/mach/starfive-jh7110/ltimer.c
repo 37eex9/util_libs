@@ -43,7 +43,7 @@ static ps_irq_t irqs[] = {
         .type = PS_TRIGGER,
         .trigger.number = STARFIVE_TIMER_CHANNEL_1_IRQ,
         .trigger.trigger = 1
-    },
+    },/* SoC has 4 timer channels but driver only supports two
     {
         .type = PS_TRIGGER,
         .trigger.number = STARFIVE_TIMER_CHANNEL_2_IRQ,
@@ -53,7 +53,7 @@ static ps_irq_t irqs[] = {
         .type = PS_TRIGGER,
         .trigger.number = STARFIVE_TIMER_CHANNEL_3_IRQ,
         .trigger.trigger = 1
-    },
+    },*/
 };
 
 static pmem_region_t pmems[] = {
@@ -122,6 +122,36 @@ static int ltimer_handle_irq(void *data, ps_irq_t *irq)
     return 0;
 }
 
+static inline int reset_deassert(ps_io_mapper_t *io_mapper, uint32_t mask)
+{
+    int check;
+    uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 4, 0, 0);
+    
+    *rst_addr_selector_reg &= !mask;
+    ps_io_unmap(io_mapper, rst_addr_selector_reg, 4);
+    
+    rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0);
+    check = *rst_status_reg & mask;   
+    ps_io_unmap(io_mapper, rst_status_reg, 4);
+    
+    return check != 0 ? 0 : EINVAL;
+}
+
+static inline int reset_assert(ps_io_mapper_t *io_mapper, uint32_t mask)
+{
+    int check;
+    uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 4, 0, 0);
+    
+    *rst_addr_selector_reg |= mask;
+    ps_io_unmap(io_mapper, rst_addr_selector_reg, 4);
+    
+    rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0);
+    check = *rst_status_reg & mask;
+    ps_io_unmap(io_mapper, rst_status_reg, 4);
+
+    return check == 0 ? 0 : EINVAL;
+}
+
 static int get_time(void *data, uint64_t *time)
 {
     assert(data);
@@ -179,6 +209,13 @@ static void destroy(void *data)
 
     starfive_timer_stop(&timers->timer[COUNTER_TIMER]);
     starfive_timer_stop(&timers->timer[TIMEOUT_TIMER]);
+
+    error = reset_assert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(COUNTER_TIMER));
+    ZF_LOGE_IF(error, "Failed to (re)assert timer%d reset.", COUNTER_TIMER)
+    error = reset_assert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(TIMEOUT_TIMER));
+    ZF_LOGE_IF(error, "Failed to (re)assert timer%d reset.", TIMEOUT_TIMER)
+    error = reset_assert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_APB);
+    ZF_LOGE_IF(error, "Failed to (re)assert APB reset.")
 
     ps_pmem_unmap(&timers->ops, pmems[0], timers->vaddr);
 
@@ -264,11 +301,27 @@ int ltimer_default_init(ltimer_t *ltimer,
         return EINVAL;
     }
 
+    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_APB)) {
+        ZF_LOGE("APB reset could not be deasserted.");
+        destroy(ltimer->data);
+        return EINVAL;
+    }
+
     starfive_timer_disable_all_channels(timers->vaddr);
 
+    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(COUNTER_TIMER))) {
+        ZF_LOGE("timer%d reset could not be deasserted.", COUNTER_TIMER);
+        destroy(ltimer->data);
+        return EINVAL;
+    }
     starfive_timer_init(&timers->timer[COUNTER_TIMER], timers->vaddr, COUNTER_TIMER);
     starfive_timer_start(&timers->timer[COUNTER_TIMER]);
 
+    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(TIMEOUT_TIMER))) {
+        ZF_LOGE("timer%d reset could not be deasserted.", TIMEOUT_TIMER);
+        destroy(ltimer->data);
+        return EINVAL;
+    }
     starfive_timer_init(&timers->timer[TIMEOUT_TIMER], timers->vaddr, TIMEOUT_TIMER);
 
     return 0;

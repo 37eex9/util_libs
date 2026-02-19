@@ -42,6 +42,15 @@
 #define STARFIVE_TIMER_INTERRUPT_MASKED 1
 #define STARFIVE_TIMER_INTCLR_BUSY BIT(1)
 
+/* Reset CSRs SYSCRG */
+#define STARFIVE_SYS_CRG_BASE 0x13020000
+/* https://doc-en.rvspace.org/JH7110/TRM/JH7110_TRM/sys_crg.html#sys_crg__table_txv_pfn_wsb */
+#define STARFIVE_SW_RST_3_ADDR_SLCT (STARFIVE_SYS_CRG_BASE + 0x304)
+/* https://doc-en.rvspace.org/JH7110/TRM/JH7110_TRM/sys_crg.html#sys_crg__table_rnc_d53_2tb */
+#define STARFIVE_SW_RST_3_STATUS (STARFIVE_SYS_CRG_BASE + 0x314)
+#define STARFIVE_RST_TIMER_RST_APB BIT(21)
+#define STARFIVE_RST_TIMER_RST_CH(X) BIT(22+X)
+
 typedef struct {
     /* Registers */
     /* this register doesn't seem to do anything */
