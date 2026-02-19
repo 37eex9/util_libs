@@ -122,6 +122,32 @@ static int ltimer_handle_irq(void *data, ps_irq_t *irq)
     return 0;
 }
 
+static inline int enable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
+{
+    int check;
+    uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
+
+    *syscrg_clk |= STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+
+    check = *syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+    ps_io_unmap(io_mapper, syscrg_clk, 4);
+
+    return check != 0 ? 0 : EINVAL;
+}
+
+static inline int disable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
+{
+    int check;
+    uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
+
+    *syscrg_clk &= !STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+
+    check = *syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+    ps_io_unmap(io_mapper, syscrg_clk, 4);
+
+    return check == 0 ? 0 : EINVAL;
+}
+
 static inline int reset_deassert(ps_io_mapper_t *io_mapper, uint32_t mask)
 {
     int check;
@@ -209,6 +235,13 @@ static void destroy(void *data)
 
     starfive_timer_stop(&timers->timer[COUNTER_TIMER]);
     starfive_timer_stop(&timers->timer[TIMEOUT_TIMER]);
+
+    error = disable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(COUNTER_TIMER));
+    ZF_LOGE_IF(error, "Failed to disable timer%d clock.", COUNTER_TIMER);
+    error = disable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(TIMEOUT_TIMER));
+    ZF_LOGE_IF(error, "Failed to disable timer%d clock.", TIMEOUT_TIMER);
+    error = disable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_APB_TIMER);
+    ZF_LOGE_IF(error, "Failed to disable apb timer clock.");
 
     error = reset_assert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(COUNTER_TIMER));
     ZF_LOGE_IF(error, "Failed to (re)assert timer%d reset.", COUNTER_TIMER)
@@ -301,7 +334,12 @@ int ltimer_default_init(ltimer_t *ltimer,
         return EINVAL;
     }
 
-    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_APB)) {
+    if (enable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_APB_TIMER)) {
+        ZF_LOGE("APB timer clock could not be enabled.");
+        destroy(ltimer->data);
+        return EINVAL;
+    }
+    if (reset_deassert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_APB)) {
         ZF_LOGE("APB reset could not be deasserted.");
         destroy(ltimer->data);
         return EINVAL;
@@ -309,7 +347,12 @@ int ltimer_default_init(ltimer_t *ltimer,
 
     starfive_timer_disable_all_channels(timers->vaddr);
 
-    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(COUNTER_TIMER))) {
+    if (enable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(COUNTER_TIMER))) {
+        ZF_LOGE("Timer ch%d clock could not be enabled.", COUNTER_TIMER);
+        destroy(ltimer->data);
+        return EINVAL;
+    }
+    if (reset_deassert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(COUNTER_TIMER))) {
         ZF_LOGE("timer%d reset could not be deasserted.", COUNTER_TIMER);
         destroy(ltimer->data);
         return EINVAL;
@@ -317,7 +360,12 @@ int ltimer_default_init(ltimer_t *ltimer,
     starfive_timer_init(&timers->timer[COUNTER_TIMER], timers->vaddr, COUNTER_TIMER);
     starfive_timer_start(&timers->timer[COUNTER_TIMER]);
 
-    if (reset_deassert(& timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(TIMEOUT_TIMER))) {
+    if (enable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(TIMEOUT_TIMER))) {
+        ZF_LOGE("Timer ch%d clock could not be enabled.", TIMEOUT_TIMER);
+        destroy(ltimer->data);
+        return EINVAL;
+    }
+    if (reset_deassert(&timers->ops.io_mapper, STARFIVE_RST_TIMER_RST_CH(TIMEOUT_TIMER))) {
         ZF_LOGE("timer%d reset could not be deasserted.", TIMEOUT_TIMER);
         destroy(ltimer->data);
         return EINVAL;
