@@ -40,7 +40,9 @@
 #define STARFIVE_TIMER_ENABLED 1
 #define STARFIVE_TIMER_INTERRUPT_UNMASKED 0
 #define STARFIVE_TIMER_INTERRUPT_MASKED 1
+#define STARFIVE_TIMER_INTCLR_ENA BIT(0)
 #define STARFIVE_TIMER_INTCLR_BUSY BIT(1)
+#define STARFIVE_TIMER_RELOAD_VALUE	0
 
 /* Reset CSRs SYSCRG */
 #define STARFIVE_SYS_CRG_BASE 0x13020000
@@ -57,16 +59,16 @@
 typedef struct {
     /* Registers */
     /* this register doesn't seem to do anything */
-    uint32_t status;
-    uint32_t ctrl;
-    uint32_t load;
+    uint32_t status; /* RO[0:4]: Interrupt Status for channel0~4 */
+    uint32_t ctrl; /* RW[0]: 0-continuous run, 1-single run */
+    uint32_t load; /* RW: load value to counter */
     uint32_t unknown1;
-    uint32_t enable;
-    uint32_t reload;
-    uint32_t value;
+    uint32_t enable; /* RW[0]: timer enable register */
+    uint32_t reload; /* RW: write 1 or 0 both reload counter */
+    uint32_t value; /* RO: timer value register */
     uint32_t unknown2;
-    uint32_t intclr;
-    uint32_t intmask;
+    uint32_t intclr; /* RW: timer interrupt clear register */
+    uint32_t intmask; /* RW[0]: timer interrupt mask register */
 } starfive_timer_regs_t;
 
 typedef struct {
@@ -76,6 +78,7 @@ typedef struct {
      * This allows us to count to a higher number than allowed by the hardware.
      */
     uint32_t value_h;
+    /* uint32_t reload; */ /* Could be used to resume a timer where it got suspended. */
 } starfive_timer_t;
 
 void starfive_timer_start(starfive_timer_t *timer);

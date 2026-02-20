@@ -26,11 +26,32 @@ static void print_regs(starfive_timer_t *timer)
     printf("     Mask Interrupt:   0x%08x @ [%p]\n", timer->regs->intmask, &timer->regs->intmask);
 }
 
+void starfive_timer_clr_irq(starfive_timer_t *timer)
+{
+    assert(timer);
+    assert(timer->regs);
+
+    while (timer->regs->intclr & STARFIVE_TIMER_INTCLR_BUSY) {
+        /*
+         * Hardware does not accept writes to this register while BUSY is set.
+         * Wait for this bit to be unset by hardware.
+         */
+    }
+
+    timer->regs->intclr = STARFIVE_TIMER_INTCLR_ENA;
+    timer->regs->intclr = 0;
+}
+
 void starfive_timer_start(starfive_timer_t *timer)
 {
     assert(timer);
     assert(timer->regs);
 
+	/* Disable and clear interrupt first */
+    timer->regs->intmask = STARFIVE_TIMER_INTERRUPT_MASKED;
+    starfive_timer_clr_irq(timer);
+
+    timer->regs->intmask = STARFIVE_TIMER_INTERRUPT_UNMASKED;
     timer->regs->enable = STARFIVE_TIMER_ENABLED;
 }
 
@@ -40,6 +61,7 @@ void starfive_timer_stop(starfive_timer_t *timer)
     assert(timer->regs);
 
     timer->regs->enable = STARFIVE_TIMER_DISABLED;
+    starfive_timer_clr_irq(timer);
 }
 
 void starfive_timer_handle_irq(starfive_timer_t *timer)
@@ -48,15 +70,7 @@ void starfive_timer_handle_irq(starfive_timer_t *timer)
     assert(timer->regs);
 
     timer->value_h += 1;
-
-    while (timer->regs->intclr & STARFIVE_TIMER_INTCLR_BUSY) {
-        /*
-         * Hardware does not accept writes to this register while BUSY is set.
-         * Wait for this bit to be unset by hardware.
-         */
-    }
-
-    timer->regs->intclr = 1;
+    starfive_timer_clr_irq(timer);
 }
 
 uint64_t starfive_timer_get_time(starfive_timer_t *timer)
@@ -93,6 +107,7 @@ void starfive_timer_reset(starfive_timer_t *timer)
 
     timer->regs->ctrl = STARFIVE_TIMER_MODE_CONTINUOUS;
     timer->regs->load = STARFIVE_TIMER_MAX_TICKS;
+    timer->regs->reload = STARFIVE_TIMER_RELOAD_VALUE;
     timer->value_h = 0;
 }
 
@@ -141,9 +156,11 @@ void starfive_timer_init(starfive_timer_t *timer, void *vaddr, uint64_t channel)
     assert(channel >= 0 && channel < STARFIVE_TIMER_NUM_CHANNELS);
 
     timer->regs = vaddr + STARFIVE_TIMER_CHANNEL_REGISTERS_LEN_IN_BYTES * channel;
+    starfive_timer_clr_irq(timer);
     timer->regs->enable = STARFIVE_TIMER_DISABLED;
     timer->regs->ctrl = STARFIVE_TIMER_MODE_CONTINUOUS;
     timer->regs->load = STARFIVE_TIMER_MAX_TICKS;
     timer->regs->intmask = STARFIVE_TIMER_INTERRUPT_UNMASKED;
+    timer->regs->reload = STARFIVE_TIMER_RELOAD_VALUE;
     timer->value_h = 0;
 }
