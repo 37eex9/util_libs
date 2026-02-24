@@ -126,9 +126,13 @@ static inline int enable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
 {
     int check;
     uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
+    volatile uint32_t reg = 0;
 
-    *syscrg_clk |= STARFIVE_SYSCRG_CLK_ENABLE_BIT;
-
+    while ((reg & STARFIVE_SYSCRG_CLK_ENABLE_BIT) == 0)
+    {
+        *syscrg_clk |= STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+        reg = *syscrg_clk;
+    }
     check = *syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT;
     ps_io_unmap(io_mapper, syscrg_clk, 4);
 
@@ -151,14 +155,21 @@ static inline int disable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
 static inline int reset_deassert(ps_io_mapper_t *io_mapper, uint32_t mask)
 {
     int check;
-    uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 4, 0, 0);
+    uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 0x14, 0, 0);
+    volatile uint32_t reg = 0;
+    rst_status_reg = rst_addr_selector_reg + 0x10;
+
     
     *rst_addr_selector_reg &= !mask;
-    ps_io_unmap(io_mapper, rst_addr_selector_reg, 4);
+    /* ps_io_unmap(io_mapper, rst_addr_selector_reg, 4); */
     
-    rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0);
-    check = *rst_status_reg & mask;   
-    ps_io_unmap(io_mapper, rst_status_reg, 4);
+    /* rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0); */
+    while ((reg & mask)== 0) {
+        reg = *rst_status_reg;
+    }
+    check = *rst_status_reg & mask;
+    /* ps_io_unmap(io_mapper, rst_status_reg, 4); */
+    ps_io_unmap(io_mapper, rst_addr_selector_reg, 0x14);
     
     return check != 0 ? 0 : EINVAL;
 }
@@ -345,8 +356,7 @@ int ltimer_default_init(ltimer_t *ltimer,
         return EINVAL;
     }
 
-    starfive_timer_disable_all_channels(timers->vaddr);
-
+    /* init actual timer channels */
     if (enable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(COUNTER_TIMER))) {
         ZF_LOGE("Timer ch%d clock could not be enabled.", COUNTER_TIMER);
         destroy(ltimer->data);
@@ -357,9 +367,7 @@ int ltimer_default_init(ltimer_t *ltimer,
         destroy(ltimer->data);
         return EINVAL;
     }
-    starfive_timer_init(&timers->timer[COUNTER_TIMER], timers->vaddr, COUNTER_TIMER);
-    starfive_timer_start(&timers->timer[COUNTER_TIMER]);
-
+    
     if (enable_clock(&timers->ops.io_mapper, STARFIVE_SYSCRG_CLK_TIMER(TIMEOUT_TIMER))) {
         ZF_LOGE("Timer ch%d clock could not be enabled.", TIMEOUT_TIMER);
         destroy(ltimer->data);
@@ -370,6 +378,10 @@ int ltimer_default_init(ltimer_t *ltimer,
         destroy(ltimer->data);
         return EINVAL;
     }
+
+    starfive_timer_disable_all_channels(timers->vaddr);
+    starfive_timer_init(&timers->timer[COUNTER_TIMER], timers->vaddr, COUNTER_TIMER);
+    starfive_timer_start(&timers->timer[COUNTER_TIMER]);
     starfive_timer_init(&timers->timer[TIMEOUT_TIMER], timers->vaddr, TIMEOUT_TIMER);
 
     return 0;
