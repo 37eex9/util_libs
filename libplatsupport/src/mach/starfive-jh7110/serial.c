@@ -15,7 +15,7 @@
 #if defined(CONFIG_PLAT_VISIONFIVE213B)
 #define UART_IER 0x01 /* UART Interrupt Enable Register */
 #define UART_LSR 0x05 /* UART Line Status Register */
-#elif defineg(CONFIG_PLAT_STAR64)
+#elif defined(CONFIG_PLAT_STAR64)
 #define UART_IER 0x04 /* UART Interrupt Enable Register */
 #define UART_LSR 0x14 /* UART Line Status Register */
 #else

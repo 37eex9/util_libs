@@ -125,16 +125,14 @@ static int ltimer_handle_irq(void *data, ps_irq_t *irq)
 static inline int enable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
 {
     int check;
-    uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
-    volatile uint32_t reg = 0;
+    volatile uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
 
-    while ((reg & STARFIVE_SYSCRG_CLK_ENABLE_BIT) == 0)
+    while ((*syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT) == 0)
     {
         *syscrg_clk |= STARFIVE_SYSCRG_CLK_ENABLE_BIT;
-        reg = *syscrg_clk;
     }
     check = *syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT;
-    ps_io_unmap(io_mapper, syscrg_clk, 4);
+    ps_io_unmap(io_mapper, (uint32_t *) syscrg_clk, 4);
 
     return check != 0 ? 0 : EINVAL;
 }
@@ -144,7 +142,7 @@ static inline int disable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
     int check;
     uint32_t *syscrg_clk = ps_io_map(io_mapper, clk, 4, 0, 0);
 
-    *syscrg_clk &= !STARFIVE_SYSCRG_CLK_ENABLE_BIT;
+    *syscrg_clk &= ~STARFIVE_SYSCRG_CLK_ENABLE_BIT;
 
     check = *syscrg_clk & STARFIVE_SYSCRG_CLK_ENABLE_BIT;
     ps_io_unmap(io_mapper, syscrg_clk, 4);
@@ -155,21 +153,21 @@ static inline int disable_clock(ps_io_mapper_t *io_mapper, uint64_t clk)
 static inline int reset_deassert(ps_io_mapper_t *io_mapper, uint32_t mask)
 {
     int check;
-    uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 0x14, 0, 0);
-    volatile uint32_t reg = 0;
-    rst_status_reg = rst_addr_selector_reg + 0x10;
+    volatile uint32_t *rst_status_reg, *rst_addr_selector_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_ADDR_SLCT, 4, 0, 0);
 
-    
-    *rst_addr_selector_reg &= !mask;
-    /* ps_io_unmap(io_mapper, rst_addr_selector_reg, 4); */
-    
-    /* rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0); */
-    while ((reg & mask)== 0) {
-        reg = *rst_status_reg;
+    while ((*rst_addr_selector_reg & mask) != 0) {
+        *rst_addr_selector_reg &= ~mask;
     }
+    ps_io_unmap(io_mapper, (uint32_t *) rst_addr_selector_reg, 4);
+
+    /* 
+     * check status register 
+     * status register is more or less the inverse of the address selector register
+     * bits 30 and 31 are reserved, i.e., always 0
+     */
+    rst_status_reg = ps_io_map(io_mapper, STARFIVE_SW_RST_3_STATUS, 4, 0, 0);
     check = *rst_status_reg & mask;
-    /* ps_io_unmap(io_mapper, rst_status_reg, 4); */
-    ps_io_unmap(io_mapper, rst_addr_selector_reg, 0x14);
+    ps_io_unmap(io_mapper, (uint32_t *) rst_status_reg, 4);
     
     return check != 0 ? 0 : EINVAL;
 }
